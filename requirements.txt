@@ -1,0 +1,11 @@
+torch
+torchvision
+torchaudio
+open_clip_torch
+streamlit
+pandas
+numpy
+scikit-learn
+Pillow
+tqdm
+requests
