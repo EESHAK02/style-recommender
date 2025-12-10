@@ -13,7 +13,7 @@ venv/
 # Data & models
 data/raw/
 data/*.csv
-models/*.pt
+# models/*.pt
 models/*.pth
 
 # Streamlit cache
@@ -34,9 +34,6 @@ models/*.pth
 
 # ignore test images
 test_imgs/
-
-# ignore model weights
-models/*.pt
 
 # ignore latex build
 build/
