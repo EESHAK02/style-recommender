@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 from PIL import Image
 import streamlit as st
+import os
 
 from core import (
     load_trained_models_for_inference,
@@ -17,6 +18,9 @@ from core import (
     extract_color_palette,
     get_test_image_pool,
 )
+
+USE_OLLAMA = os.getenv("USE_OLLAMA", "false").lower() == "true"
+USE_FULL_POLYVORE = os.getenv("USE_FULL_POLYVORE", "false").lower() == "true"
 
 
 st.set_page_config(page_title="Fashion CLIP Stylist", layout="wide")
@@ -249,7 +253,7 @@ with tab1:
             }
 
 
-    # ---- Stored results ----
+    # Stored results
     outfit_res = st.session_state.get("outfit_results")
     if outfit_res is not None:
         probs = outfit_res["probs"]
@@ -304,12 +308,15 @@ with tab1:
                 )
 
         st.markdown("##### LLM Stylist")
-        if st.checkbox("Ask stylist about this outfit", key="outfit_llm_on"):
-            if st.button("Ask stylist for advice", key="outfit_llm_btn"):
-                with st.spinner("Stylist is thinking..."):
-                    response = _llm_stylist_for_outfit(descs, outfit_score)
-                st.markdown("###### Stylist says:")
-                st.write(response)
+        if not USE_OLLAMA:
+            st.info("LLM stylist is available in the local version (with Ollama running).")
+        else:
+            if st.checkbox("Ask stylist about this outfit", key="outfit_llm_on"):
+                if st.button("Ask stylist for advice", key="outfit_llm_btn"):
+                    with st.spinner("Stylist is thinking..."):
+                        response = _llm_stylist_for_outfit(descs, outfit_score)
+                    st.markdown("###### Stylist says:")
+                    st.write(response)
 
     else:
         st.info("Once you rate an outfit, results will appear here.")
@@ -324,123 +331,134 @@ with tab2:
         "compatible items from the Polyvore test set. Optionally choose a desired style."
     )
 
-    col_anchor = st.columns(2)
-    with col_anchor[0]:
-        anchor_file = st.file_uploader(
-            "Anchor item",
-            type=["jpg", "jpeg", "png"],
-            key="matches_anchor",
+    if not USE_FULL_POLYVORE or not IMAGES_DIR.exists():
+        st.info(
+            "Dataset-based matching is disabled on this demo deployment.\n\n"
+            "To enable 'Find Matches', run the app locally with the Polyvore dataset "
+            "and set `USE_FULL_POLYVORE=true`."
         )
-    with col_anchor[1]:
-        anchor_desc = st.text_input(
-    "Describe this anchor item (optional)", key="matches_anchor_input"
-)
-
-    style_options = ["Any", "casual", "formal", "streetwear", "sporty", "minimal", "party"]
-    desired_style = st.selectbox(
-        "Desired style for matches (optional)", style_options, index=0
-    )
-    if desired_style == "Any":
-        desired_style_arg = None
     else:
-        desired_style_arg = desired_style
 
-    # How many candidates to scan from the test pool
-    # num_candidates = st.slider(
-    #     "How many candidates to scan from the dataset?",
-    #     min_value=100,
-    #     max_value=600,
-    #     value=300,
-    #     step=50,
-    # )
-    num_candidates = 500
-
-    top_k = st.slider(
-        "How many top matches to display?",
-        min_value=2,
-        max_value=10,
-        value=4,
-        step=1,
+        col_anchor = st.columns(2)
+        with col_anchor[0]:
+            anchor_file = st.file_uploader(
+                "Anchor item",
+                type=["jpg", "jpeg", "png"],
+                key="matches_anchor",
+            )
+        with col_anchor[1]:
+            anchor_desc = st.text_input(
+        "Describe this anchor item (optional)", key="matches_anchor_input"
     )
-
-    if anchor_file:
-        anchor_img = Image.open(anchor_file).convert("RGB")
-        st.image(anchor_img, caption="Anchor item", width=260)
-
-        if st.button("Find matches", key="find_matches_btn"):
-            with st.spinner("Searching for compatible items..."):
-                # To get a candidate pool from the test split
-                try:
-                    pool = list(get_test_image_pool())
-                except Exception:
-                    # Fallback
-                    pool = sample_test_images(num_candidates * 2)
-
-                if len(pool) > num_candidates:
-                    import random
-
-                    candidate_paths = random.sample(pool, num_candidates)
-                else:
-                    candidate_paths = pool
-
-                ranked = rank_candidates_for_anchor(
-                    clip_model,
-                    preprocess,
-                    classifier,
-                    anchor_img,
-                    candidate_paths,
-                    top_k=top_k,
-                    desired_style=desired_style_arg,
-                )
-
-            st.session_state["matches_ranked"] = ranked
-            st.session_state["matches_anchor_desc"] = anchor_desc or ""
-
-    # Show results if present
-    matches_ranked = st.session_state.get("matches_ranked")
-    if matches_ranked:
-        st.markdown("### Recommended matches")
-        n_cols = min(4, len(matches_ranked))
-        cols = st.columns(n_cols)
-
-        for idx, item in enumerate(matches_ranked):
-            col = cols[idx % n_cols]
-            with col:
-                img_path = IMAGES_DIR / item["path"]
-                if img_path.exists():
-                    st.image(img_path, caption=item["path"], use_container_width=True)
-                st.write(f"Compatibility prob: **{item['prob']*100:.1f}%**")
-                st.write(f"CLIP similarity: `{item['cos_sim']:.3f}`")
-                if item["style_score"] is not None:
-                    st.write(f"Style alignment: `{item['style_score']:.3f}`")
-                st.write(f"Final score: **{item['final_score']:.3f}**")
-
-        # Optional stylist summary
-        st.markdown("##### LLM Stylist")
-        if st.checkbox("Ask stylist about these matches", key="matches_llm_on"):
-            if st.button("Ask stylist", key="matches_llm_btn"):
-                avg_prob = sum(m["prob"] for m in matches_ranked) / len(matches_ranked)
-                prompt = f"""
-You are a fashion stylist.
-
-The user has an anchor item: {st.session_state.get("matches_anchor_desc", "[no description]")}
-
-We suggested {len(matches_ranked)} candidate matches from a catalog, each with a model-based compatibility probability.
-The average compatibility probability is about {avg_prob*100:.1f}%.
-
-Please:
-1. Briefly describe what kind of pieces these matches tend to be (e.g. casual basics, statement items, etc.).
-2. Explain how well they complement the anchor item overall.
-3. Suggest what kind of outfit (occasion or vibe) these combinations would work best for.
-
-Keep it concise and friendly.
-"""
-                with st.spinner("Stylist is thinking..."):
-                    resp = call_ollama(prompt)
-                # st.markdown("###### Stylist says:")
-                st.write(resp)
-    else:
-        st.info("Upload an anchor item and click 'Find matches' to see recommendations.")
+    
+        style_options = ["Any", "casual", "formal", "streetwear", "sporty", "minimal", "party"]
+        desired_style = st.selectbox(
+            "Desired style for matches (optional)", style_options, index=0
+        )
+        if desired_style == "Any":
+            desired_style_arg = None
+        else:
+            desired_style_arg = desired_style
+    
+        # How many candidates to scan from the test pool
+        # num_candidates = st.slider(
+        #     "How many candidates to scan from the dataset?",
+        #     min_value=100,
+        #     max_value=600,
+        #     value=300,
+        #     step=50,
+        # )
+        num_candidates = 500
+    
+        top_k = st.slider(
+            "How many top matches to display?",
+            min_value=2,
+            max_value=10,
+            value=4,
+            step=1,
+        )
+    
+        if anchor_file:
+            anchor_img = Image.open(anchor_file).convert("RGB")
+            st.image(anchor_img, caption="Anchor item", width=260)
+    
+            if st.button("Find matches", key="find_matches_btn"):
+                with st.spinner("Searching for compatible items..."):
+                    # To get a candidate pool from the test split
+                    try:
+                        pool = list(get_test_image_pool())
+                    except Exception:
+                        # Fallback
+                        pool = sample_test_images(num_candidates * 2)
+    
+                    if len(pool) > num_candidates:
+                        import random
+    
+                        candidate_paths = random.sample(pool, num_candidates)
+                    else:
+                        candidate_paths = pool
+    
+                    ranked = rank_candidates_for_anchor(
+                        clip_model,
+                        preprocess,
+                        classifier,
+                        anchor_img,
+                        candidate_paths,
+                        top_k=top_k,
+                        desired_style=desired_style_arg,
+                    )
+    
+                st.session_state["matches_ranked"] = ranked
+                st.session_state["matches_anchor_desc"] = anchor_desc or ""
+    
+        # Show results if present
+        matches_ranked = st.session_state.get("matches_ranked")
+        if matches_ranked:
+            st.markdown("### Recommended matches")
+            n_cols = min(4, len(matches_ranked))
+            cols = st.columns(n_cols)
+    
+            for idx, item in enumerate(matches_ranked):
+                col = cols[idx % n_cols]
+                with col:
+                    img_path = IMAGES_DIR / item["path"]
+                    if img_path.exists():
+                        st.image(img_path, caption=item["path"], use_container_width=True)
+                    st.write(f"Compatibility prob: **{item['prob']*100:.1f}%**")
+                    st.write(f"CLIP similarity: `{item['cos_sim']:.3f}`")
+                    if item["style_score"] is not None:
+                        st.write(f"Style alignment: `{item['style_score']:.3f}`")
+                    st.write(f"Final score: **{item['final_score']:.3f}**")
+    
+            # Optional stylist summary
+            st.markdown("##### LLM Stylist")
+            if not USE_OLLAMA:
+                st.info("LLM stylist is available in the local version (with Ollama running).")
+            else:
+                if st.checkbox("Ask stylist about these matches", key="matches_llm_on"):
+                    if st.button("Ask stylist", key="matches_llm_btn"):
+                        avg_prob = sum(m["prob"] for m in matches_ranked) / len(matches_ranked)
+                        prompt = f"""
+        You are a fashion stylist.
+        
+        The user has an anchor item: {st.session_state.get("matches_anchor_desc", "[no description]")}
+        
+        We suggested {len(matches_ranked)} candidate matches from a catalog, each with a model-based compatibility probability.
+        The average compatibility probability is about {avg_prob*100:.1f}%.
+        
+        Please:
+        1. Briefly describe what kind of pieces these matches tend to be (e.g. casual basics, statement items, etc.).
+        2. Explain how well they complement the anchor item overall.
+        3. Suggest what kind of outfit (occasion or vibe) these combinations would work best for.
+        
+        Keep it concise and friendly.
+        """
+                        with st.spinner("Stylist is thinking..."):
+                            resp = call_ollama(prompt)
+                        # st.markdown("###### Stylist says:")
+                        st.write(resp)
+        else:
+            st.info("Upload an anchor item and click 'Find matches' to see recommendations.")
 
 
 # Tab 3: Style & Color Analyzer
@@ -511,14 +529,17 @@ with tab3:
                 st.caption(f"{hex_code}\nRGB{c['rgb']}")
 
         st.markdown("##### LLM Stylist")
-        if st.checkbox(
-            "Ask stylist how to wear this item", key="style_item_llm_on"
-        ):
-            if st.button("Ask stylist", key="style_item_llm_btn"):
-                with st.spinner("Stylist is thinking..."):
-                    resp = _llm_stylist_for_item(styles, colors, desc)
-                # st.markdown("###### Stylist says:")
-                st.write(resp)
+        if not USE_OLLAMA:
+            st.info("LLM stylist is available in the local version (with Ollama running).")
+        else:
+            if st.checkbox(
+                "Ask stylist how to wear this item", key="style_item_llm_on"
+            ):
+                if st.button("Ask stylist", key="style_item_llm_btn"):
+                    with st.spinner("Stylist is thinking..."):
+                        resp = _llm_stylist_for_item(styles, colors, desc)
+                    # st.markdown("###### Stylist says:")
+                    st.write(resp)
     else:
         st.info("Upload an image and click 'Analyze item' to see style and color information.")
 
