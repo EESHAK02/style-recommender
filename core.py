@@ -201,47 +201,6 @@ def sample_test_images(n: int) -> List[str]:
     rng = np.random.default_rng()
     return list(rng.choice(imgs, size=n, replace=False))
 
-
-# def rank_candidates_for_anchor(
-#     clip_model,
-#     preprocess,
-#     classifier,
-#     anchor_img: Image.Image,
-#     candidate_paths: List[str],
-#     top_k: int = 8,
-# ) -> List[Dict]:
-#     """
-#     Given an anchor image and a list of candidate image filenames (under IMAGES_DIR),
-#     return a ranked list of candidates with compatibility scores.
-#     """
-#     # Encode anchor once
-#     anchor_emb = encode_single_image(clip_model, preprocess, anchor_img)  # (1, D)
-
-#     results = []
-#     for rel_path in candidate_paths:
-#         img_path = IMAGES_DIR / rel_path
-#         if not img_path.exists():
-#             continue
-#         img = Image.open(img_path).convert("RGB")
-#         cand_emb = encode_single_image(clip_model, preprocess, img)  # (1, D)
-
-#         cos_sim = torch.nn.functional.cosine_similarity(anchor_emb, cand_emb).item()
-#         with torch.no_grad():
-#             logit = classifier(anchor_emb, cand_emb)
-#             prob = torch.sigmoid(logit).item()
-
-#         results.append(
-#             {
-#                 "path": rel_path,
-#                 "cos_sim": float(cos_sim),
-#                 "prob": float(prob),
-#             }
-#         )
-
-#     # Sort by probability desc
-#     results.sort(key=lambda x: x["prob"], reverse=True)
-#     return results[:top_k]
-
 def rank_candidates_for_anchor(
     clip_model,
     preprocess,
@@ -487,6 +446,8 @@ def call_ollama(
         ollama pull llama3.1
         ollama serve
     """
+    if not USE_OLLAMA:
+        return None
     try:
         payload = {
             "model": model,
