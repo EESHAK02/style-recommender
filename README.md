@@ -24,6 +24,7 @@ Upload two clothing item images and get:
 ### LLM Stylist
 - Uses a local LLM (llama3.1) via Ollama
 - Provides human-like outfit advice and explanations
+- Works only when this is run locally - the streamlit deployed version doesn't give LLM responses
 
 # Notes
 
