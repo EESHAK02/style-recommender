@@ -1,7 +1,7 @@
 torch
 torchvision
 torchaudio
-open_clip_torch
+open-clip-torch
 streamlit
 pandas
 numpy
@@ -9,3 +9,4 @@ scikit-learn
 Pillow
 tqdm
 requests
+opencv-python-headless
