@@ -28,7 +28,7 @@ Upload two clothing item images and get:
 
 # Notes
 
-- Deployed on Streamlit cloud - (Style Recommender)[https://semantic-outfit-compatibility-vlr.streamlit.app/]
+- Deployed on Streamlit cloud - [Style Recommender](https://semantic-outfit-compatibility-vlr.streamlit.app/)
 - The model works best on clean product-style images (Polyvore-like).
 - Real-world photos may score lower due to domain shift.
 - This is an early version; more features and refinements will be added later.
