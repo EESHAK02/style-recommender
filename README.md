@@ -28,6 +28,7 @@ Upload two clothing item images and get:
 
 # Notes
 
+- Feel free to check out the details in the report - [Project Report](VLR_Project_Report.pdf)
 - Deployed on Streamlit cloud - [Style Recommender](https://semantic-outfit-compatibility-vlr.streamlit.app/)
 - The model works best on clean product-style images (Polyvore-like).
 - Real-world photos may score lower due to domain shift.
